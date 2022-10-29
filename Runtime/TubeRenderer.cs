@@ -1,12 +1,9 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using UnityEngine.Rendering;
-using UnityEngine.UIElements;
 
-namespace Unity.TubeRenderer
+namespace OParaskos.TubeRenderer
 {
     [RequireComponent(typeof(MeshFilter))]
     [ExecuteInEditMode]
@@ -21,72 +18,65 @@ namespace Unity.TubeRenderer
         public float startWidth = 1f;
         [Min(0)]
         public float endWidth = 1f;
-        public bool showNodesInEditor = false;
+        public bool showNodesInEditor;
         public Vector2 uvScale = Vector2.one;
-        public bool inside = false;
+        public bool inside;
+        public bool shouldRender;
 
         private MeshFilter meshFilter;
-        private Mesh mesh = null;
-        private float theta = 0f;
-        private int lastUpdate = 0;
+        private Mesh mesh;
+        private float theta;
+        private int lastUpdate;
 
-        public Vector3 GetPosition(float f)
+        public Vector3 GetInterpPosition(float f)
         {
-            int a = Math.Max(0, Math.Min(positions.Length, Mathf.FloorToInt(f)));
-            int b = Math.Max(0, Math.Min(positions.Length, Mathf.CeilToInt(f)));
-            float t = f - a;
+            var a = Math.Max(0, Math.Min(positions.Length, Mathf.FloorToInt(f)));
+            var b = Math.Max(0, Math.Min(positions.Length, Mathf.CeilToInt(f)));
+            var t = f - a;
             return Vector3.Lerp(positions[a], positions[b], t);
-        }
-
-        public Vector3 GetPosition(int index)
-        {
-            return positions[index];
-        }
-
-        public void SetPositions(Vector3[] positions)
-        {
-            this.positions = positions;
         }
 
         private void Awake()
         {
             meshFilter = GetComponent<MeshFilter>();
-            if (mesh == null) mesh = new Mesh();
+            mesh ??= new Mesh();
+            
+            if (!shouldRender) return;
             meshFilter.mesh = CreateMesh();
             lastUpdate = PropHashCode();
         }
 
-
         private Mesh CreateMesh()
         {
-            Vector3[] interpolatedPositions = Enumerable.Range(0, (positions.Length - 1) * subdivisions)
-                .Select(i => ((float)i) / ((float)subdivisions))
-                .Select(f => GetPosition(f))
+            var interpolatedPositions = Enumerable.Range(0, (positions.Length - 1) * subdivisions)
+                .Select(i => i / (float)subdivisions)
+                .Select(GetInterpPosition)
                 .Append(positions.Last())
                 .ToArray();
 
-            theta = (Mathf.PI * 2) / segments;
+            theta = Mathf.PI * 2 / segments;
 
-            Vector3[] verts = new Vector3[interpolatedPositions.Length * segments];
-            Vector2[] uvs = new Vector2[verts.Length];
-            Vector3[] normals = new Vector3[verts.Length];
-            int[] tris = new int[2 * 3 * verts.Length];
+            var verts = new Vector3[interpolatedPositions.Length * segments];
+            var uvs = new Vector2[verts.Length];
+            var normals = new Vector3[verts.Length];
+            var tris = new int[2 * 3 * verts.Length];
 
-            for (int i = 0; i < interpolatedPositions.Length; i++)
+            for (var i = 0; i < interpolatedPositions.Length; i++)
             {
-                float dia = Mathf.Lerp(startWidth, endWidth, (float)i / interpolatedPositions.Length);
+                var dia = Mathf.Lerp(startWidth, endWidth, (float)i / interpolatedPositions.Length);
 
-                Vector3 localForward = GetVertexFwd(interpolatedPositions, i);
-                Vector3 localUp = Vector3.Cross(localForward, Vector3.up);
-                Vector3 localRight = Vector3.Cross(localForward, localUp);
+                var localForward = GetVertexFwd(interpolatedPositions, i);
+                var localUp = Vector3.Cross(localForward, Vector3.up);
+                var localRight = Vector3.Cross(localForward, localUp);
 
-                for (int j = 0; j < segments; ++j)
+                for (var j = 0; j < segments; ++j)
                 {
-                    float t = theta * j;
-                    Vector3 vert = interpolatedPositions[i] + (Mathf.Sin(t) * localUp * dia) + (Mathf.Cos(t) * localRight * dia);
-                    int x = i * segments + j;
+                    var t = theta * j;
+                    var vert = interpolatedPositions[i] + localUp * (Mathf.Sin(t) * dia) +
+                               localRight * (Mathf.Cos(t) * dia);
+                    var x = i * segments + j;
                     verts[x] = vert;
-                    uvs[x] = uvScale * new Vector2(t / (Mathf.PI * 2), ((float)i * positions.Length) / (float)subdivisions);
+                    uvs[x] = uvScale * new Vector2(t / (Mathf.PI * 2), (float)i * positions.Length / subdivisions);
                     normals[x] = (vert - interpolatedPositions[i]).normalized;
                     if (i >= interpolatedPositions.Length - 1) continue;
 
@@ -113,6 +103,7 @@ namespace Unity.TubeRenderer
                     }
                 }
             }
+
             mesh.vertices = verts;
             mesh.uv = uvs;
             mesh.normals = normals;
@@ -121,53 +112,39 @@ namespace Unity.TubeRenderer
             return mesh;
         }
 
-        private Vector3 GetVertexFwd(Vector3[] positions, int i)
+        private static Vector3 GetVertexFwd(IReadOnlyList<Vector3> inputPositions, int i)
         {
-            Vector3 lastPosition;
-            Vector3 thisPosition;
-            if (i <= 0)
-            {
-                lastPosition = positions[i];
-            }
-            else
-            {
-                lastPosition = positions[i - 1];
-            }
-            if (i < positions.Length - 1)
-            {
-                thisPosition = positions[i + 1];
-            }
-            else
-            {
-                thisPosition = positions[i];
-            }
+            var lastPosition = i <= 0 ? inputPositions[i] : inputPositions[i - 1];
+            var thisPosition = i < inputPositions.Count - 1 ? inputPositions[i + 1] : inputPositions[i];
+
             return (lastPosition - thisPosition).normalized;
         }
 
         private void OnDrawGizmos()
         {
-            if (showNodesInEditor)
+            if (!showNodesInEditor) return;
+            
+            Gizmos.color = Color.red;
+            for (var i = 0; i < positions.Length; ++i)
             {
-                Gizmos.color = Color.red;
-                for (int i = 0; i < positions.Length; ++i)
-                {
-                    float dia = Mathf.Lerp(startWidth, endWidth, (float)i / positions.Length);
-                    Gizmos.DrawSphere(transform.position + positions[i], dia);
-                }
+                var dia = Mathf.Lerp(startWidth, endWidth, (float)i / positions.Length);
+                Gizmos.DrawSphere(transform.position + positions[i], dia);
             }
         }
 
         private int PropHashCode()
         {
-            return positions.Aggregate(0, (total, it) => total ^ it.GetHashCode()) ^ positions.GetHashCode() ^ segments.GetHashCode() ^ subdivisions.GetHashCode() ^ startWidth.GetHashCode() ^ endWidth.GetHashCode();
+            return positions.Aggregate(0, (total, it) => total ^ it.GetHashCode()) ^ positions.GetHashCode() ^
+                   segments.GetHashCode() ^ subdivisions.GetHashCode() ^ startWidth.GetHashCode() ^
+                   endWidth.GetHashCode();
         }
 
         private void LateUpdate()
         {
-            if (lastUpdate != PropHashCode())
-            {
-                meshFilter.mesh = CreateMesh();
-            }
+            if (!shouldRender) return;
+            if (lastUpdate == PropHashCode()) return;
+
+            meshFilter.mesh = CreateMesh();
         }
     }
 }
