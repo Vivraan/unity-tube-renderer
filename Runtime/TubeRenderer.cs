@@ -1,5 +1,4 @@
-﻿#if TUBE_OPARASKOS
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -10,6 +9,7 @@ namespace OParaskos.TubeRenderer
     [ExecuteInEditMode]
     public class TubeRenderer : MonoBehaviour
     {
+#if TUBE_OPARASKOS
         [Min(1)]
         public int subdivisions = 3;
         [Min(0)]
@@ -147,6 +147,6 @@ namespace OParaskos.TubeRenderer
 
             meshFilter.mesh = CreateMesh();
         }
+#endif
     }
 }
-#endif
